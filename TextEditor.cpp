@@ -11,6 +11,19 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h" // for imGui::GetCurrentWindow()
 
+std::string wstrtostr(const std::wstring& wstr)
+{
+	// Convert a Unicode string to an ASCII string
+	std::string strTo;
+	size_t sizeRequired = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+	char* szTo = new char[sizeRequired + 1];
+	szTo[wstr.size()] = L'\0';
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, szTo, (int)sizeRequired, NULL, NULL);
+	strTo = szTo;
+	delete[] szTo;
+	return strTo;
+}
+
 // TODO
 // - multiline comments vs single-line: latter is blocking start of a ML
 // - handle unicode/utf
@@ -269,7 +282,8 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 		{
 			cumulatedStringWidth[1] = cumulatedStringWidth[0];
 			cumulatedString += line[columnCoord].mChar;
-			cumulatedStringWidth[0] = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, (char*)cumulatedString.c_str(), nullptr, nullptr).x;
+			std::string b = wstrtostr(cumulatedString);
+			cumulatedStringWidth[0] = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, b.c_str(), nullptr, nullptr).x;
 			columnWidth = (cumulatedStringWidth[0] - cumulatedStringWidth[1]);
 			columnCoord++;
 		}
@@ -618,18 +632,7 @@ void TextEditor::HandleMouseInputs()
 	}
 }
 
-std::string wstrtostr(const std::wstring& wstr)
-{
-	// Convert a Unicode string to an ASCII string
-	std::string strTo;
-	size_t sizeRequired = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
-	char* szTo = new char[sizeRequired + 1];
-	szTo[wstr.size()] = L'\0';
-	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, szTo, (int)sizeRequired, NULL, NULL);
-	strTo = szTo;
-	delete[] szTo;
-	return strTo;
-}
+
 
 
 
@@ -732,21 +735,60 @@ void TextEditor::Render()
 				{
 					ImGui::BeginTooltip();
 					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-					ImGui::Text("Error at line %d:", errorIt->first);
+					ImGui::Text(u8"Ошибка в строке %d:", errorIt->first);
 					ImGui::PopStyleColor();
 					ImGui::Separator();
 					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.2f, 1.0f));
-					ImGui::Text("%s", errorIt->second.c_str());
+					
+					b = wstrtostr(errorIt->second.c_str());
+					ImGui::Text("%s", b.c_str());
+					
 					ImGui::PopStyleColor();
 					ImGui::EndTooltip();
 				}
 			}
 
+			// Draw running markers
+			auto runningIt = mRunningMarkers.find(lineNo + 1);
+			bool running = false;
+			if (runningIt != mRunningMarkers.end())
+			{
+				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
+				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::RunningMarker]);
+
+				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
+				{
+					ImGui::BeginTooltip();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.2f, 1.0f));
+					ImGui::Text(u8"Переменные состояния. Строка %d:", runningIt->first);
+					ImGui::PopStyleColor();
+					ImGui::Separator();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.2f, 1.0f));
+
+					b = wstrtostr(runningIt->second.c_str());
+					ImGui::Text("%s", b.c_str());
+
+					ImGui::PopStyleColor();
+					ImGui::EndTooltip();
+				}
+				running = true;
+			}
+
+
 			// Draw line number (right aligned)
-			_snwprintf(buf, 16, L"%d  ", lineNo + 1);
+			ImU32 Col = mPalette[(int)PaletteIndex::LineNumber];
+			if (running)
+			{
+				Col = 0xff00ffff;
+				_snwprintf(buf, 16, L">%d  ", lineNo + 1);
+			}
+			else
+			{
+				_snwprintf(buf, 16, L" %d  ", lineNo + 1);
+			}
 			b = wstrtostr(buf);
 			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, (char*)b.c_str(), nullptr, nullptr).x;
-			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], (char*)buf);
+			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), Col, (char*)b.c_str());
 
 			// Highlight the current line (where the cursor is)
 			if (mState.mCursorPosition.mLine == lineNo)
@@ -829,8 +871,9 @@ void TextEditor::Render()
 				auto it = mLanguageDefinition.mIdentifiers.find(id);
 				if (it != mLanguageDefinition.mIdentifiers.end())
 				{
+					b = wstrtostr(it->second.mDeclaration);
 					ImGui::BeginTooltip();
-					ImGui::TextUnformatted((char*)it->second.mDeclaration.c_str());
+					ImGui::TextUnformatted(b.c_str());
 					ImGui::EndTooltip();
 				}
 				else
@@ -838,8 +881,9 @@ void TextEditor::Render()
 					auto pi = mLanguageDefinition.mPreprocIdentifiers.find(id);
 					if (pi != mLanguageDefinition.mPreprocIdentifiers.end())
 					{
+						b = wstrtostr(pi->second.mDeclaration);
 						ImGui::BeginTooltip();
-						ImGui::TextUnformatted((char*)pi->second.mDeclaration.c_str());
+						ImGui::TextUnformatted(b.c_str());
 						ImGui::EndTooltip();
 					}
 				}
@@ -864,7 +908,7 @@ void TextEditor::Render(const Char* aTitle, const ImVec2& aSize, bool aBorder)
 	mTextChanged = false;
 	mCursorPositionChanged = false;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
+	ImGui::PushStyleColor(/*ImGuiCol_ChildWindowBg*/3, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	ImGui::BeginChild((char*)aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove);
 	ImGui::PushAllowKeyboardFocus(true);
@@ -1657,6 +1701,7 @@ const TextEditor::Palette & TextEditor::GetDarkPalette()
 		0xffe0e0e0, // Cursor
 		0x80a06020, // Selection
 		0x800020ff, // ErrorMarker
+		0x8000ff00, // RunningMarker
 		0x40f08000, // Breakpoint
 		0xff707000, // Line number
 		0x40000000, // Current line fill
@@ -1685,6 +1730,7 @@ const TextEditor::Palette & TextEditor::GetLightPalette()
 		0xff000000, // Cursor
 		0x80600000, // Selection
 		0xa00010ff, // ErrorMarker
+		0x8000ff00, // RunningMarker
 		0x80f08000, // Breakpoint
 		0xff505000, // Line number
 		0x40000000, // Current line fill
@@ -1713,6 +1759,7 @@ const TextEditor::Palette & TextEditor::GetRetroBluePalette()
 		0xff0080ff, // Cursor
 		0x80ffff00, // Selection
 		0xa00000ff, // ErrorMarker
+		0x8000ff00, // RunningMarker
 		0x80ff8000, // Breakpoint
 		0xff808000, // Line number
 		0x40000000, // Current line fill
@@ -2405,7 +2452,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::CPlusPlus(
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
-		langDef.mName = L"C++";
+		langDef.mName = u8"C++";
 
 		inited = true;
 	}
@@ -2478,7 +2525,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::HLSL()
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
-		langDef.mName = L"HLSL";
+		langDef.mName = u8"HLSL";
 
 		inited = true;
 	}
@@ -2527,7 +2574,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
-		langDef.mName = L"GLSL";
+		langDef.mName = u8"GLSL";
 
 		inited = true;
 	}
@@ -2593,7 +2640,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
-		langDef.mName = L"C";
+		langDef.mName = u8"C";
 
 		inited = true;
 	}
@@ -2657,7 +2704,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::SQL()
 		langDef.mCaseSensitive = false;
 		langDef.mAutoIndentation = false;
 
-		langDef.mName = L"SQL";
+		langDef.mName = u8"SQL";
 
 		inited = true;
 	}
@@ -2707,7 +2754,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::AngelScrip
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
-		langDef.mName = L"AngelScript";
+		langDef.mName = u8"AngelScript";
 
 		inited = true;
 	}
@@ -2761,7 +2808,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::Lua()
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = false;
 
-		langDef.mName = L"Lua";
+		langDef.mName = u8"Lua";
 
 		inited = true;
 	}

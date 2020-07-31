@@ -31,6 +31,7 @@ public:
 		Cursor,
 		Selection,
 		ErrorMarker,
+		RunningMarker,
 		Breakpoint,
 		LineNumber,
 		CurrentLineFill,
@@ -121,6 +122,7 @@ public:
 	typedef std::wstring String;
 	typedef std::unordered_map<std::wstring, Identifier> Identifiers;
 	typedef std::unordered_set<std::wstring> Keywords;
+	typedef std::map<int, std::wstring> RunningMarkers;
 	typedef std::map<int, std::wstring> ErrorMarkers;
 	typedef std::unordered_set<int> Breakpoints;
 	typedef std::array<ImU32, (unsigned)PaletteIndex::Max> Palette;
@@ -147,7 +149,7 @@ public:
 		typedef std::vector<TokenRegexString> TokenRegexStrings;
 		typedef bool (*TokenizeCallback)(const Char * in_begin, const Char * in_end, const Char *& out_begin, const Char *& out_end, PaletteIndex & paletteIndex);
 
-		std::wstring mName;
+		std::string mName;
 		Keywords mKeywords;
 		Identifiers mIdentifiers;
 		Identifiers mPreprocIdentifiers;
@@ -184,6 +186,7 @@ public:
 	const Palette& GetPalette() const { return mPaletteBase; }
 	void SetPalette(const Palette& aValue);
 
+	void SetRunningLine(const RunningMarkers& aMarkers) { mRunningMarkers = aMarkers; }
 	void SetErrorMarkers(const ErrorMarkers& aMarkers) { mErrorMarkers = aMarkers; }
 	void SetBreakpoints(const Breakpoints& aMarkers) { mBreakpoints = aMarkers; }
 
@@ -342,6 +345,7 @@ private:
 	RegexList mRegexList;
 
 	bool mCheckComments;
+	RunningMarkers mRunningMarkers;
 	Breakpoints mBreakpoints;
 	ErrorMarkers mErrorMarkers;
 	ImVec2 mCharAdvance;
